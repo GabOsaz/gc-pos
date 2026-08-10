@@ -1,0 +1,23 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-black: #2B2A29;
+  --color-brand-light-gray: #F3F4F6;
+  --color-brand-lighter-gray: #F9FAFB;
+  --color-brand-gray: #D1D5DB;
+  --color-brand-dark-gray: #64748B;
+  --color-brand-blue: #18014E;
+  --color-brand-green: #15803D;
+  --color-brand-secondary-green: #007A5E;
+  --color-brand-light-blue-1: #3A00BF;
+  --color-brand-light-purple: #BAADFF;
+  --color-brand-neutral: #EAECF0;
+  --color-brand-red: #D61C38;
+  --color-brand-crimson: #DC143C;
+  --color-brand-orange: #DD4F05;
+  --color-brand-logan-grey: #98A2B3;
+}
+
+.authImg {
+  background-image: url("./assets/images/auth-bg.jpg");
+}
