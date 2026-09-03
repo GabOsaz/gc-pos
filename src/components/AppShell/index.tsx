@@ -25,7 +25,6 @@ const AppShell = ({ children }: AppShellProps) => {
   const { data: admin } = useAdminProfile();
 
   const userName = admin ? `${admin.first_name} ${admin.last_name}` : "";
-  const branchName = admin?.store_location?.name ?? "";
   const userDisplayName = admin?.first_name ?? "";
 
   return (
