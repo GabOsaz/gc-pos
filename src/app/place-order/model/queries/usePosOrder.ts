@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiInstance, unwrap } from "../../../../libs/instance";
-import type { PosOrder } from "../types";
+import type { PosOrder } from "../../../../model/pos/types";
 
 export const posOrderKey = (orderId: string | null) => ["pos", "order", orderId] as const;
 

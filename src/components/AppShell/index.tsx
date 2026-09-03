@@ -1,5 +1,6 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import logo from "../../assets/svg/gc-logo.svg";
+import { useAdminProfile } from "../../common-hooks/useAdminProfile";
 
 interface NavLink {
   label: string;
@@ -19,13 +20,13 @@ const navLinks: NavLink[] = [
   { label: "Today's Pickup", to: "/pickup" },
 ];
 
-const userName = "Peace Adenekan";
-const branchName = "Lekki Branch";
-const userDisplayName = "Pristia";
-const notificationCount = 3;
-
 const AppShell = ({ children }: AppShellProps) => {
   const { location } = useRouterState();
+  const { data: admin } = useAdminProfile();
+
+  const userName = admin ? `${admin.first_name} ${admin.last_name}` : "";
+  const branchName = admin?.store_location?.name ?? "";
+  const userDisplayName = admin?.first_name ?? "";
 
   return (
     <div className="">
@@ -34,7 +35,7 @@ const AppShell = ({ children }: AppShellProps) => {
         <div className="flex items-center justify-between py-6">
           <img src={logo} alt="Garment Care" className="max-h-9 sm:max-h-none w-auto" />
           <div className="flex items-center gap-3 sm:gap-6">
-            <button type="button" className="relative p-1">
+            {/* <button type="button" className="relative p-1">
               <svg
                 width="22"
                 height="22"
@@ -53,7 +54,7 @@ const AppShell = ({ children }: AppShellProps) => {
                   {notificationCount}
                 </span>
               )}
-            </button>
+            </button> */}
             <button
               type="button"
               className="flex items-center gap-2 border border-[#E2E8F0] rounded-lg pl-2 pr-3 py-2"
@@ -62,7 +63,7 @@ const AppShell = ({ children }: AppShellProps) => {
                 {userDisplayName[0]}
               </div>
               <span className="hidden sm:inline text-sm font-medium">{userName}</span>
-              <svg
+              {/* <svg
                 width="16"
                 height="16"
                 viewBox="0 0 24 24"
@@ -73,7 +74,7 @@ const AppShell = ({ children }: AppShellProps) => {
                 strokeLinejoin="round"
               >
                 <path d="m6 9 6 6 6-6" />
-              </svg>
+              </svg> */}
             </button>
           </div>
         </div>
@@ -82,9 +83,9 @@ const AppShell = ({ children }: AppShellProps) => {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between mt-6 pb-4">
           <div>
             <h1 className="text-2xl sm:text-3xl font-semibold">Welcome, {userDisplayName}</h1>
-            <p className="text-sm text-white/70 mt-1">
+            {/* <p className="text-sm text-white/70 mt-1">
               Branch Name - {branchName}
-            </p>
+            </p> */}
           </div>
           <nav className="flex items-center gap-5 sm:gap-8 overflow-x-auto">
             {navLinks.map((link) => {

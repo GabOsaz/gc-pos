@@ -3,7 +3,7 @@ import CustomModal from "../../../components/Modal";
 import { useDebouncedValue } from "../../../common-hooks/useDebouncedValue";
 import { formatNaira } from "../../../utils/money";
 import { useCustomerSearch } from "../model/queries/useCustomerSearch";
-import type { PosCustomerSummary } from "../model/types";
+import type { PosCustomerSummary } from "../../../model/pos/types";
 
 interface SelectCustomerModalProps {
   isOpen: boolean;

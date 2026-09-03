@@ -6,7 +6,7 @@ import type {
   PosServiceItem,
   PosServiceItemModifier,
   PosServicePreferenceItem,
-} from "./types";
+} from "../../../model/pos/types";
 
 /* ---------------------------------------------------------------- modifiers */
 

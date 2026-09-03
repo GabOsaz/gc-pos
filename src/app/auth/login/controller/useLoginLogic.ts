@@ -1,13 +1,20 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "react-toastify";
 import { useNavigate } from "@tanstack/react-router";
 import routeMap from "../../../../utils/routeMap";
 import { appCookies } from "../../../../libs";
+import { consumeSessionExpiredNotice } from "../../../../utils/session";
 import { useLogin } from "../model/mutations/useLogin";
 
 function useLoginLogic() {
   const routerNavigate = useNavigate();
   const navigate = (to: string) => routerNavigate({ to: to as any });
+
+  useEffect(() => {
+    if (consumeSessionExpiredNotice()) {
+      toast.error("Session expired. Please log in again");
+    }
+  }, []);
   const [loginDetails, setLoginDetails] = useState({
     email: "",
     password: "",

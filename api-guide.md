@@ -31,6 +31,9 @@ Not Phase 1 API work:
 Use these words consistently in the UI and client state:
 
 - Order: the customer-facing visit/intake record.
+- Invoice: the customer-facing bill for the order. The frontend uses the draft invoice for bill review and the finalized/open invoice for payment.
+- Invoice line item: a bill row for a service item, modifier, or preference. Modifier/preference rows point back to the parent service-item invoice line.
+- Invoice discount: a bill discount row. Loyalty appears here as `LOYALTY_DISCOUNT`.
 - Order item: a service applied within an order. This is the pricing and work unit.
 - Order item piece: one physical object in the order. Created once per physical thing.
 - `order_item_piece_services`: the many-to-many link between physical pieces and service items. One shirt with dry-cleaning, button repair, and tear repair is one physical piece with three service links.
@@ -48,27 +51,51 @@ Use these words consistently in the UI and client state:
 - `DEBIT` means money out of the business.
 - Vouchers are payment instruments, not discounts.
 - Voucher redemption is a payment tender: `VOUCHER -> REVENUE`.
-- Voucher must be auto-applied first when the customer has available voucher balance.
-- Loyalty redemption and promo discounts are bill adjustments, not payment methods.
-- The bill is cached transactionally by the backend. The client should display returned totals, not recompute authoritative totals.
-- `tax_amount` is set as soon as the order/items exist — it is **not** `0` in draft, and it does not accumulate from payments. Adding/removing items or adjustments recomputes it immediately, along with the rest of the money caches.
-- Voucher balance lives on the customer, not the order: `customer.voucher_balance` (returned on every order response's nested `customer` object). An applied voucher shows up as a `payment_transactions` row (`source_account: 'VOUCHER'`) once a payment is made.
+- Voucher must be auto-applied first on the initial invoice payment when the customer has available voucher balance.
+- Loyalty redemption is an invoice discount, not a payment method.
+- The invoice is the bill of record. The client should display invoice totals, invoice line items, and invoice discounts; order money fields are mirrored backend caches.
+- Creating a POS order creates a `DRAFT` invoice immediately.
+- Adding or removing order items refreshes the `DRAFT` invoice and mirrors the refreshed invoice totals back to the order.
+- `tax_amount` is set as soon as the draft invoice exists. It is **not** `0` in draft, and it does not accumulate from payments. Adding/removing items refreshes the draft invoice and mirrored order caches.
+- Voucher balance lives on the customer, but the draft invoice captures the currently applicable voucher as `invoice.voucher_amount`. No voucher ledger row is written until payment.
+- Voucher reduces what the cashier charges through `invoice.amount_to_charge`; it does not reduce the taxable base.
+- Current rule: adding/removing items refreshes the draft invoice and mirrored order caches. Order adjustments are not part of the current POS draft billing display.
 
-Canonical bill composition (`OrderMoneyHelper.computeOrderAmounts`, recomputed on create, add-item, and remove-item):
+Canonical order cache composition from the draft invoice:
 
 ```txt
-items_subtotal    = sum(order_items.price)
-modifiers_total   = sum(order_items.modifier_amount)
-preferences_total = sum(order_items.preference_amount), currently expected to be 0
-fees_total        = sum(order_adjustments.amount) where direction = CREDIT
-discount_total    = sum(order_adjustments.amount) where direction = DEBIT
-taxable_amount    = max(items_subtotal + modifiers_total + preferences_total + fees_total - discount_total, 0)
-tax_amount        = configured tax (percentage or flat fee, see "Get POS Config") on taxable_amount
-grand_total       = taxable_amount + tax_amount
-balance_due       = max(grand_total - paid_amount + refunded_amount, 0)
+items_subtotal    = sum draft invoice SERVICE_ITEM line amounts
+modifiers_total   = sum draft invoice SERVICE_ITEM_MODIFIER line amounts
+preferences_total = sum draft invoice SERVICE_ITEM_PREFERENCE line amounts
+fees_total        = 0 for now
+discount_total    = draft invoice discount_total
+taxable_amount    = draft invoice taxable_amount
+tax_amount        = draft invoice tax_total
+grand_total       = draft invoice total
+paid_amount       = draft invoice amount_paid, so 0 at create
+balance_due       = draft invoice amount_due, so total - amount_paid
+due_by            = max order_items.due_at, not invoice-owned
 ```
 
-`paid_amount` and `refunded_amount` only change on payment (`/payments/pos/...`), never on item/adjustment changes; `balance_due` reflects both. `tax_amount` is the order's full tax target, fixed independently of payment — individual `payment_transactions.tax` rows are that same amount prorated across payments for ledger purposes, not summed back onto the order.
+`paid_amount` and `refunded_amount` only change on payment (`/payments/pos/...`), never on draft item changes. `tax_amount` is the order's full tax target, copied from the invoice; individual `payment_transactions.tax` rows are prorated across payments for ledger purposes.
+
+Invoice amount fields:
+
+```txt
+subtotal           = sum(line_items.quantity * line_items.unit_price)
+discount_total     = sum(invoice_discounts.amount)
+taxable_amount     = subtotal - discount_total
+tax_total          = tax charged on taxable_amount
+total              = taxable_amount + tax_total
+initial_amount_due = approved part-payment amount when approval exists, else total
+voucher_amount     = min(customer voucher balance, initial_amount_due)
+amount_to_charge   = initial_amount_due - voucher_amount
+initial_tax_due    = tax_total portion expected with the first payment attempt
+amount_paid        = successful payment transactions against this invoice
+amount_due         = total - amount_paid
+```
+
+For draft orders, `paid_amount` is `0` and `amount_due` equals the invoice `total`. Payment finalization owns voucher consumption, amount-paid updates, and approval consumption.
 
 ## Editability Rules
 
@@ -76,7 +103,7 @@ balance_due       = max(grand_total - paid_amount + refunded_amount, 0)
 - Paid or part-paid order/payment status not `UNPAID`: replace/remove is blocked, but attach is allowed.
 - A post-payment attach is a new add-on charge when priced. The backend will append the row, recompute caches, and move affected item/pieces to `PENDING_PAYMENT` until the delta is paid.
 - Preferences remain free and exempt from the freeze either way.
-- `order_adjustments` remain editable at any payment status.
+- Invoice line items and invoice discounts are backend-owned. The client changes the draft bill by adding/removing order items, modifiers, or preferences.
 
 ## Statuses
 
@@ -253,8 +280,8 @@ type PosOrdersQuery = {
 ```
 
 Returns a paginated list of lightweight POS orders. Rows include the order
-header, customer, store, and pos_attendant only — `order_adjustments` and
-`order_items` are intentionally excluded from this list view.
+header, customer, store, and pos_attendant only. `invoice` and `order_items`
+are intentionally excluded from this list view. Fetch one order to get the draft invoice bill.
 
 ### Create Order
 
@@ -279,7 +306,7 @@ type CreatePosOrderPieceAttribute = {
 
 type CreatePosOrderItem = {
   service_item_id: number;
-  service_preference_item_id?: number | null;
+  service_preference_item_id?: number | null; // singular — one preference item per order item
   service_item_modifier_ids?: number[];
   accessories?: number[];
   customer_note?: string | null;
@@ -290,13 +317,15 @@ type CreatePosOrderItem = {
 type CreatePosOrder = {
   customer_id: number;
   customer_note?: string | null;
-  items: CreatePosOrderItem[];
+  items: CreatePosOrderItem[]; // 1-10 items
 };
 ```
 
+`CreatePosOrderItem` is the exact same shape used by "Add POS Order Item" below — the backend uses one shared item schema for both the create-order array and the singular add-item body.
+
 Behavior:
 
-- `items` must contain at least one service item.
+- `items` must contain 1-10 service items.
 - The backend infers physical pieces from each submitted `service_item_id`.
 - If the service item has linked `item_pieces`, one `order_item_piece` is created per linked piece.
 - If the service item has no linked `item_pieces`, one physical piece is created with `item_piece_id = null`.
@@ -306,7 +335,7 @@ Behavior:
 - Additional services are not accepted on create-order; the future add-service endpoint will attach a service to explicit existing pieces.
 - `is_set_member`, `is_accessory`, and `is_delicate` are inferred by the backend.
 - `tagger_note` is not accepted here; tagging endpoints own tagger notes.
-- This endpoint creates an unpaid draft only. If the customer has loyalty balance, the backend automatically adds a draft `LOYALTY_REDEMPTION` order adjustment capped at the current bill before discount. There is no create-order opt-in/opt-out field. It does not take payment or write voucher/loyalty/payment ledger rows.
+- This endpoint creates an unpaid draft order and one `DRAFT` invoice. If the customer has loyalty balance, the backend automatically adds a `LOYALTY_DISCOUNT` invoice discount capped at the current bill subtotal. If the customer has voucher balance, the backend stores the applicable value on `invoice.voucher_amount`. It does not take payment or write voucher/loyalty/payment ledger rows.
 - Draft create writes `ItemHistory` `CREATE` rows for pieces but writes no audit rows. The first order/item audit is the full committed order snapshot at first successful payment, or the full dropped-draft snapshot if the order is abandoned.
 
 Response:
@@ -330,20 +359,6 @@ type PosOrderStoreDetails = {
 type PosOrderAttendantDetails = {
   id: number;
   name: string;
-};
-
-type PosOrderAdjustment = {
-  id: string;
-  order_id: string;
-  customer_id: number;
-  adjustment_type: string; // e.g. 'LOYALTY_REDEMPTION'
-  direction: 'CREDIT' | 'DEBIT';
-  amount: number;
-  source: string;
-  source_reference_id: string | null;
-  source_snapshot: Record<string, unknown>;
-  created_at: string;
-  updated_at: string;
 };
 
 // A lookup value hydrated for display, e.g. a fabric/defect/stain/accessory type.
@@ -455,6 +470,56 @@ type PosOrderItem = {
   preferences: Array<PosOrderItemCharge & { service_preference_item_id: number }>;
 };
 
+type PosInvoiceLineItem = {
+  id: string;
+  invoice_id: string;
+  order_item_id: string | null;
+  parent_line_item_id: string | null;
+  description: string;
+  product_type: 'SERVICE_ITEM' | 'SERVICE_ITEM_MODIFIER' | 'SERVICE_ITEM_PREFERENCE';
+  quantity: number;
+  unit_price: number;
+  created_at: string;
+  updated_at: string;
+};
+
+type PosInvoiceDiscount = {
+  id: string;
+  invoice_id: string;
+  description: string; // e.g. "Loyalty Discount (10% Gold)"
+  amount: number;
+  discount_type: 'LOYALTY_DISCOUNT';
+  created_at: string;
+  updated_at: string;
+};
+
+type PosPendingInvoice = {
+  id: string;
+  customer_id: number;
+  order_id: string;
+  store_id: number | null;
+  pos_attendant_id: number | null;
+  order_approval_id: string | null;
+  parent_invoice_id: string | null;
+  billing_reason: 'NEW_ORDER';
+  status: 'DRAFT' | 'OPEN' | 'CLOSED' | 'PAID';
+  subtotal: number;
+  discount_total: number;
+  taxable_amount: number;
+  tax_total: number;
+  total: number;
+  voucher_amount: number;
+  amount_to_charge: number;
+  initial_amount_due: number;
+  initial_tax_due: number;
+  amount_due: number;
+  amount_paid: number;
+  created_at: string;
+  updated_at: string;
+  line_items: PosInvoiceLineItem[];
+  discounts: PosInvoiceDiscount[];
+};
+
 type CreatePosOrderResponse = {
   id: string;
   order_number: string;
@@ -484,12 +549,14 @@ type CreatePosOrderResponse = {
   customer: PosOrderCustomerDetails;
   store: PosOrderStoreDetails | null;
   pos_attendant: PosOrderAttendantDetails | null;
-  order_adjustments: PosOrderAdjustment[];
+  invoice: PosPendingInvoice | null;
   order_items: PosOrderItem[];
 };
 ```
 
 The response `data` is the order object itself. `tax_amount` is populated from create onward, not `0` in draft (see Money Rules). `customer.voucher_balance` supports billing decisions. The nested arrays are formatted for display: `order_items[]`, each item has `service_item`, `item_attributes`, `order_item_pieces[]`, `modifiers[]`, and `preferences[]`. Hydrated fabric/defect/stain/accessory-type detail lives on the item's `item_attributes` (captured once per item at create/add-item time), not per-piece — each entry in `order_item_pieces[]` only carries the raw `item_piece_id`/`accessory_type_id`/`fabric_type_id` foreign keys plus its own status/flags; Phase 2 tagging is what verifies and persists piece-specific values.
+
+Billing display note: use `invoice` as the bill object for review. Render `invoice.line_items`, `invoice.discounts`, `invoice.voucher_amount`, `invoice.amount_to_charge`, and `invoice.initial_amount_due`. The order money fields mirror the invoice for summary/list display.
 
 ### Get POS Order
 
@@ -595,6 +662,7 @@ Behavior:
 - Verifies email/password for an active admin.
 - Requires the approving admin to have `order:approve-part-payment`.
 - Approves only `PENDING`, unused part-payment approvals.
+- Refreshes the order's `DRAFT` invoice, links `invoice.order_approval_id`, sets `invoice.initial_amount_due = approved_amount`, and computes `invoice.initial_tax_due`.
 - Writes one `OrderApproval` UPDATE audit row.
 - Later part-payment must pay exactly `approved_amount`.
 
@@ -623,37 +691,82 @@ Behavior:
 - Rejects only `PENDING`, unused part-payment approvals.
 - Writes one `OrderApproval` UPDATE audit row.
 
+### Finalize Draft Invoice
+
+```http
+POST /api/v1/pos/orders/:order_id/invoice/:invoice_id/finalize
+Authorization: Bearer <admin-token>
+Permission: order:create
+```
+
+This is the handoff from bill review to payment. The client should call it after the cashier confirms the draft bill and before collecting payment.
+
+Request body: none.
+
+Behavior:
+
+- Locks the order and the exact `DRAFT` invoice.
+- Recomputes invoice line items, invoice discounts, voucher amount, and amount fields from the current order composition.
+- Sets `status = OPEN`.
+- Rejects if the customer already has another `OPEN` invoice.
+- If `order_approval_id` exists on the invoice, validates the approval and keeps `initial_amount_due` / `initial_tax_due` aligned with it.
+- Does not mark the approval as `USED`; payment owns that.
+
+Response:
+
+```ts
+type FinalizeDraftInvoiceResponse = PosPendingInvoice; // status = 'OPEN'
+```
+
+Use the returned `invoice.id` for payment. Use `amount_to_charge` as the non-voucher amount to collect now. For normal full-payment orders, `initial_amount_due === total`; for approved part-payment orders, it equals the approved amount.
+
+### Get Pending Invoice
+
+```http
+GET /api/v1/pos/orders/:order_id/invoice/pending
+Authorization: Bearer <admin-token>
+Permission: order:view
+```
+
+Returns the order's one `OPEN` invoice, including `line_items` and `discounts`. Use this to resume payment if the screen is refreshed after finalization.
+
+Response:
+
+```ts
+type GetPendingInvoiceResponse = PosPendingInvoice; // status = 'OPEN'
+```
+
 ### Pay POS Order
 
 ```http
-POST /api/v1/payments/pos/orders/:order_id
+POST /api/v1/payments/pos/orders
 Authorization: Bearer <admin-token>
 Permission: payment:create
 ```
 
-Payment moved out of the order router entirely into its own module. The request contract also changed: `tenders` is now `payment_methods` (max 2 entries), and a required `payment_type` field replaces the old "presence of `order_approval_id`" convention for choosing full vs. part payment. The backend still automatically applies the customer's voucher balance first; submit only the remaining user-selected payment methods. Do not submit system/internal payment methods, including the voucher payment method; the API rejects them as not allowed.
+Payment moved out of the order router entirely into its own module and now targets the invoice. The backend still automatically applies the invoice voucher amount first; submit only the remaining user-selected payment methods. Do not submit system/internal payment methods, including the voucher payment method; the API rejects them as not allowed.
 
 Request:
 
 ```ts
 type PayOrder = {
-  payment_type: 'FULL' | 'PART';
-  order_approval_id?: string | null; // required when payment_type = 'PART', disallowed when 'FULL'
+  invoice_id: string;
   payment_methods: Array<{
     payment_method_id: number;
     amount: number; // kobo
     channel_last4_digit?: string | null;
-  }>; // max 2, no duplicate payment_method_id
+  }>;
 };
 ```
 
 Notes:
 
-- `payment_methods` may be empty only when voucher fully settles the amount being paid.
-- For `payment_type: 'FULL'`, `sum(payment_methods.amount)` must equal `order.balance_due - voucher_applied_by_backend`.
-- For `payment_type: 'PART'`, `order_approval_id` is required and `sum(payment_methods.amount)` must equal `order_approval.approved_amount - voucher_applied_by_backend`.
-- A successful part payment marks the approval `USED`, updates `payment_status = PARTIALLY_PAID`, and leaves the remaining `balance_due` on the order/customer outstanding balance.
-- Additional part payments use the same flow: request/approve a new approval for the current remaining balance, then call this endpoint with that approval — or use "Pay POS Order Balance" below once the order is partially paid.
+- `payment_methods` may be empty only when voucher fully settles the initial amount being paid.
+- `sum(payment_methods.amount)` must equal `invoice.amount_to_charge`, which is `invoice.initial_amount_due - invoice.voucher_amount`.
+- Full payment uses an invoice where `initial_amount_due === total`; voucher may make `amount_to_charge` lower.
+- Approved part payment uses an invoice where `initial_amount_due` equals the approved amount. Payment marks the approval `USED`.
+- Current focus is new-order payment against the finalized `NEW_ORDER` invoice. Balance-payment behavior will be finalized separately.
+- Additional balance or part-payment behavior will be handled by a separate function/flow.
 - On first successful payment, `order_status = PROCESSING`, order `intake_at` is stamped, and pieces move to `PENDING_BARCODE_TAGGING`; the pipeline-entry audit snapshot is written once. Later additional payments only write payment transactions/status history, loyalty earn, and balance caches.
 - The admin must be assigned to a store, and must be the POS attendant who created the order.
 
@@ -676,22 +789,26 @@ Authorization: Bearer <admin-token>
 Permission: payment:create
 ```
 
-A convenience endpoint for settling what's left on an already partially paid order — no `order_approval_id` needed. Only usable when the order is `payment_status = PARTIALLY_PAID` and `order_status = PROCESSING`.
+Settles the remaining amount on the same `OPEN` invoice after the first partial payment. No `order_approval_id` is needed. Only usable when the order is `payment_status = PARTIALLY_PAID` and `order_status` is not `PENDING`.
 
 Request:
 
 ```ts
 type PayOrderBalance = {
-  payment_method_id?: number;
-  amount?: number; // kobo — must be provided together with payment_method_id, or both omitted
+  payment_method_id: number;
+  amount: number; // kobo — must equal the open invoice amount_due
   channel_last4_digit?: string | null;
 };
 ```
 
 Behavior:
 
-- Settles the entire remaining `order.balance_due` in one call.
-- Accepts at most one payment method; omit both fields if voucher alone covers the remaining balance.
+- Settles the entire remaining `invoice.amount_due` in one call.
+- Uses the existing `OPEN` `NEW_ORDER` invoice; it does not create another invoice.
+- Accepts exactly one user-selected payment method.
+- Does not apply voucher and does not redeem loyalty points.
+- Earns loyalty on the paid amount minus remaining invoice tax.
+- Marks the invoice and order payment status as `PAID`; it does not change `order_status`, write item history, or write a pipeline-entry audit.
 - Same response shape as "Pay POS Order" above.
 
 ### Add POS Order Item
@@ -702,20 +819,12 @@ Authorization: Bearer <admin-token>
 Permission: order:create
 ```
 
-`order_id` is the UUID primary key returned from create-order. For this first pass, the order must still be unpaid; paid and part-paid add-on handling will be completed with the payment flow. This now adds **one** item per call (was a bulk `items[]` array before) and the method changed from `POST` to `PUT`.
+`order_id` is the UUID primary key returned from create-order. For this first pass, the order must still be unpaid; paid and part-paid add-on handling will be completed with the payment flow. This adds **one** item per call and the method is `PUT`.
 
 Request:
 
 ```ts
-type AddPosOrderItem = {
-  service_item_id: number;
-  service_preference_item_id?: number | null; // same singular field as create-order
-  service_item_modifier_ids?: number[];
-  accessories?: number[];
-  customer_note?: string | null;
-  pos_note?: string | null;
-  piece_attributes?: CreatePosOrderPieceAttribute;
-};
+type AddPosOrderItem = CreatePosOrderItem; // same shape as create-order's items[] entries
 ```
 
 Behavior:
@@ -723,7 +832,7 @@ Behavior:
 - Adds one new priced `order_item` to the existing order.
 - Infers physical pieces and accessories the same way create-order does.
 - Saves draft POS capture in the new `order_items[].item_attributes`.
-- Recomputes draft DEBIT discounts such as loyalty redemption, then recomputes order money caches transactionally.
+- Refreshes the draft invoice, including loyalty discount and voucher amount, then mirrors invoice totals back to order money caches transactionally.
 - Writes one `ItemHistory` `CREATE` row per new physical piece.
 - Writes no audit rows while the order is still a draft.
 
@@ -733,7 +842,7 @@ Response:
 type AddPosOrderItemResponse = CreatePosOrderResponse;
 ```
 
-The response `data` is the refreshed order object with `order_adjustments[]` and full detailed `order_items[]`.
+The response `data` is the refreshed order object with `invoice` and full detailed `order_items[]`.
 
 ### Remove POS Order Item
 
@@ -750,7 +859,7 @@ Behavior:
 - Removes one draft `order_item`.
 - Hard-deletes unshared physical pieces that only belonged to that item.
 - If a physical piece is shared with another service, the piece survives and only the removed item's service link is deleted.
-- Recomputes draft DEBIT discounts, order money caches, and `due_by` transactionally.
+- Refreshes the draft invoice, order money caches, and `due_by` transactionally.
 - Writes no new `ItemHistory` rows. Draft-created history for hard-deleted pieces is removed with the piece.
 - Writes no audit rows while the order is still a draft. Removed items are intentionally absent from the later pipeline-entry snapshot; if the draft is abandoned instead, the abandonment snapshot preserves what remained at abandonment time.
 
@@ -760,7 +869,7 @@ Response:
 type RemoveOrderItemResponse = CreatePosOrderResponse;
 ```
 
-The response `data` is the refreshed order object with `order_adjustments[]` and full detailed `order_items[]`.
+The response `data` is the refreshed order object with `invoice` and full detailed `order_items[]`.
 
 ### Abandon POS Order
 
@@ -795,7 +904,7 @@ Response:
 type AbandonOrderResponse = CreatePosOrderResponse;
 ```
 
-The response `data` is the refreshed abandoned order object with `order_adjustments[]` and full detailed `order_items[]`.
+The response `data` is the refreshed abandoned order object with full detailed `order_items[]`.
 
 ### Get Item History
 
@@ -1176,7 +1285,7 @@ Future config groups, such as store config, should be added as sibling object fi
 
 ## Phase 1 Intake Flow For UI Design
 
-These APIs are still being built. Do not wire production UI calls to these until this document marks them available.
+These APIs are still being built. Do not wire production UI calls to endpoints marked as pending until this document marks them available.
 
 Expected UI flow:
 
@@ -1198,10 +1307,11 @@ Expected UI flow:
    - POS notes
 8. Attach item-level preferences.
 9. Attach item-level modifiers.
-10. Review bill.
-11. Apply loyalty/promo adjustments where allowed.
-12. Pay using voucher first when available, then wallet/cash/card/transfer.
-13. On successful payment, show order in `PROCESSING` and pieces in `PENDING_BARCODE_TAGGING`.
+10. Review the `DRAFT` invoice bill.
+11. Request/approve part-payment when the customer will pay less than the invoice `total`.
+12. Finalize the invoice so it becomes `OPEN`.
+13. Pay against `invoice_id`, using voucher first when available, then wallet/cash/card/transfer.
+14. On successful payment, show order in `PROCESSING` and pieces in `PENDING_BARCODE_TAGGING`.
 
 ## Client State Guidance
 
@@ -1214,7 +1324,7 @@ Model draft state with separate arrays for:
 - `piece_stains`: piece-level selected stain ids.
 - `item_preferences`: item-level selected preference ids.
 - `item_modifiers`: item-level selected modifier ids.
-- `adjustments`: order-level loyalty/promo/fee rows.
+- `invoice`: current draft/open bill with line items, discounts, voucher, and charge amounts.
 - `payments`: tender rows.
 
 Avoid duplicating one physical object just because multiple services apply to it. Use one piece and multiple links.

@@ -2,6 +2,7 @@
 import axios from "axios";
 import Cookies from "js-cookie";
 import handleError from "../utils/errorHandler";
+import { endSession, isSessionExpiredStatus } from "../utils/session";
 import { appToast } from "./index";
 
 export const apiInstance = axios.create({
@@ -46,6 +47,16 @@ export const request = (axiosConfig: any) =>
       handleError(err);
       return err;
     });
+
+apiInstance.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (isSessionExpiredStatus(error?.response?.status)) {
+      endSession();
+    }
+    return Promise.reject(error);
+  }
+);
 
 apiInstance.interceptors.request.use((config) => {
   const userData = Cookies.get("userData");

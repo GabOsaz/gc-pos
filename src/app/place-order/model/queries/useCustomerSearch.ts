@@ -1,6 +1,6 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { apiInstance, unwrap } from "../../../../libs/instance";
-import type { PosCustomerSearchResponse } from "../types";
+import type { PosCustomerSearchResponse } from "../../../../model/pos/types";
 
 /** The endpoint requires a `search` term, so don't fire on an empty box. */
 const MIN_SEARCH_LENGTH = 2;

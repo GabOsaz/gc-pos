@@ -12,7 +12,7 @@ import {
   useStainTypes,
 } from "../model/queries/useLookups";
 import type { AddOrderForm } from "../model/addOrderForm";
-import type { PosServiceItem } from "../model/types";
+import type { PosServiceItem } from "../../../model/pos/types";
 
 const COLOR_SWATCHES = [
   "#D1D5DB", "#FFFFFF", "#111827", "#3B3BCA", "#DC2626",

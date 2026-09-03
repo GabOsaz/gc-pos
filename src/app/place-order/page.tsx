@@ -9,15 +9,6 @@ import AddCustomerModal from "./view/AddCustomerModal";
 import MakePaymentModal from "./view/MakePaymentModal";
 import { usePlaceOrderLogic } from "./controller/usePlaceOrderLogic";
 
-/** Loyalty and promo rows come back as DEBIT adjustments on the order. */
-function adjustmentLabel(type: string) {
-  return type
-    .toLowerCase()
-    .split("_")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
-}
-
 const PlaceOrderPage = () => {
   const {
     activeCategory,
@@ -316,17 +307,15 @@ const PlaceOrderPage = () => {
                     <span>{formatNaira(order.fees_total)}</span>
                   </div>
                 )}
-                {order?.order_adjustments
-                  ?.filter((adjustment) => adjustment.direction === "DEBIT")
-                  .map((adjustment) => (
-                    <div
-                      key={adjustment.id}
-                      className="flex justify-between text-sm text-brand-red"
-                    >
-                      <span>{adjustmentLabel(adjustment.adjustment_type)}</span>
-                      <span>-{formatNaira(adjustment.amount)}</span>
-                    </div>
-                  ))}
+                {order?.invoice?.discounts?.map((discount) => (
+                  <div
+                    key={discount.id}
+                    className="flex justify-between text-sm text-brand-red"
+                  >
+                    <span>{discount.description}</span>
+                    <span>-{formatNaira(discount.amount)}</span>
+                  </div>
+                ))}
                 <div className="flex justify-between text-sm text-gray-500">
                   <span>Tax</span>
                   <span>{formatNaira(order?.tax_amount)}</span>
@@ -390,7 +379,9 @@ const PlaceOrderPage = () => {
         isSaving={isSavingItem}
       />
 
+      {/* Keyed by order so the method selection resets between drafts */}
       <MakePaymentModal
+        key={order?.id ?? "no-order"}
         isOpen={paymentOpen}
         order={order}
         onCancel={closePayment}

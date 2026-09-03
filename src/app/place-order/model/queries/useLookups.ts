@@ -5,7 +5,7 @@ import type {
   PosConfig,
   PosServiceItemModifier,
   PosTypeLookup,
-} from "../types";
+} from "../../../../model/pos/types";
 
 /** Lookups change rarely — hold them for the session rather than refetching per modal open. */
 const LOOKUP_STALE_TIME = 1000 * 60 * 30;

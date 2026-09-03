@@ -4,7 +4,7 @@ import { appToast } from "../../../libs";
 import apiErrFn from "../../../utils/apiErrFn";
 import { validateEmail, validatePhoneNumber } from "../../../utils/inputValidationSchema";
 import { useCreateCustomer } from "../model/mutations/useCreateCustomer";
-import type { PosCustomerSummary } from "../model/types";
+import type { PosCustomerSummary } from "../../../model/pos/types";
 
 interface AddCustomerModalProps {
   isOpen: boolean;

@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiInstance, unwrap } from "../../../../libs/instance";
-import type { PosPaymentMethod } from "../types";
+import type { PosPaymentMethod } from "../../../../model/pos/types";
 
 /**
  * `GET /pos/orders/catalog/payment-methods` — store-scoped for non-super admins.

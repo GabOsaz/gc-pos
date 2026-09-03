@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiInstance, type ApiResponse } from "../../../../libs/instance";
-import type { CreatePosCustomerBody, PosCustomerSummary } from "../types";
+import type { CreatePosCustomerBody, PosCustomerSummary } from "../../../../model/pos/types";
 
 /**
  * `POST /pos/orders/customers` — creates a local customer only (no CleanCloud,

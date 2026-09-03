@@ -1,28 +1,46 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "@tanstack/react-router";
+import { appToast } from "../../../../libs";
+import { useServiceItemModifiers } from "../../../place-order/model/queries/useLookups";
+import { usePosOrder } from "../../../place-order/model/queries/usePosOrder";
 import {
-  buildMockOrderDetail,
-  buildMockOrderItems,
-  type OrderItemRow,
-} from "../../../../utils/mockOrders";
+  NORMAL_TYPE,
+  toPickupItemRows,
+  toPickupSummary,
+  type PickupItemRow,
+} from "../model/pickupDetailMapping";
 
-const itemTypes = ["All", "Express", "Normal"] as const;
-type ItemTypeFilter = (typeof itemTypes)[number];
-
+const ALL = "All";
 const PAGE_SIZE = 6;
-const mockItems = buildMockOrderItems();
 
 export const usePickupDetailsLogic = () => {
   const { id } = useParams({ from: "/pickup/$id" });
   const navigate = useNavigate();
 
+  const { data: posOrder, isLoading, isError } = usePosOrder(id);
+  const { data: modifiers = [] } = useServiceItemModifiers();
+
   const order = useMemo(
-    () => buildMockOrderDetail(id, "Ready for Pickup"),
-    [id]
+    () => (posOrder ? toPickupSummary(posOrder) : null),
+    [posOrder]
   );
 
+  const allItems = useMemo(
+    () => toPickupItemRows(posOrder, modifiers),
+    [posOrder, modifiers]
+  );
+
+  const typeOptions = useMemo(() => {
+    const types = new Set<string>();
+    allItems.forEach((row) => types.add(row.type));
+    const sorted = [...types].sort((a, b) =>
+      a === NORMAL_TYPE ? -1 : b === NORMAL_TYPE ? 1 : a.localeCompare(b)
+    );
+    return [ALL, ...sorted];
+  }, [allItems]);
+
   const [search, setSearch] = useState("");
-  const [typeFilter, setTypeFilter] = useState<ItemTypeFilter>("All");
+  const [typeFilter, setTypeFilter] = useState<string>(ALL);
   const [filterOpen, setFilterOpen] = useState(false);
   const [page, setPage] = useState(1);
 
@@ -43,20 +61,21 @@ export const usePickupDetailsLogic = () => {
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
-    return mockItems.filter((row) => {
-      const matchesType = typeFilter === "All" || row.type === typeFilter;
+    return allItems.filter((row) => {
+      const matchesType = typeFilter === ALL || row.type === typeFilter;
       const matchesSearch =
         !query ||
         row.item.toLowerCase().includes(query) ||
         row.category.toLowerCase().includes(query) ||
-        row.colour.toLowerCase().includes(query);
+        row.colour.toLowerCase().includes(query) ||
+        row.serviceType.toLowerCase().includes(query);
       return matchesType && matchesSearch;
     });
-  }, [search, typeFilter]);
+  }, [allItems, search, typeFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
-  const items: OrderItemRow[] = filtered.slice(
+  const items: PickupItemRow[] = filtered.slice(
     (currentPage - 1) * PAGE_SIZE,
     currentPage * PAGE_SIZE
   );
@@ -66,43 +85,38 @@ export const usePickupDetailsLogic = () => {
     setPage(1);
   };
 
-  const handleTypeFilter = (type: ItemTypeFilter) => {
+  const handleTypeFilter = (type: string) => {
     setTypeFilter(type);
     setFilterOpen(false);
     setPage(1);
   };
 
   const handleMarkAsDone = () => {
-    // TODO: wire to the pickup completion endpoint.
-    console.info(`Mark as done -> ${order.orderId}`);
+    appToast.info("Completing an order is not available yet");
   };
 
   const handlePrintReceipt = () => {
-    // TODO: wire to the receipt printing flow.
-    console.info(`Print receipt -> ${order.orderId}`);
+    appToast.info("Receipt printing is not available yet");
   };
 
   const goBack = () => navigate({ to: "/pickup" });
 
   return {
-    // Data
     order,
     items,
+    isLoading,
+    isError,
 
-    // State
     search,
     typeFilter,
     filterOpen,
     page: currentPage,
     totalPages,
 
-    // Refs
     filterRef,
 
-    // Setters
     setFilterOpen,
 
-    // Methods
     handleSearch,
     handleTypeFilter,
     handleMarkAsDone,
@@ -111,7 +125,6 @@ export const usePickupDetailsLogic = () => {
     goToPreviousPage: () => setPage(Math.max(1, currentPage - 1)),
     goToNextPage: () => setPage(Math.min(totalPages, currentPage + 1)),
 
-    // Constants
-    typeOptions: itemTypes,
+    typeOptions,
   };
 };

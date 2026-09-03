@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiInstance, type ApiResponse } from "../../../../libs/instance";
 import { posOrderKey } from "../queries/usePosOrder";
-import type { CreatePosOrderBody, PosOrder, PosOrderItemInput } from "../types";
+import type { CreatePosOrderBody, PosOrder, PosOrderItemInput } from "../../../../model/pos/types";
 
 /**
  * Draft mutations resolve to the full `{ status, message, code, data }` envelope
@@ -41,7 +41,7 @@ export function useAddOrderItem() {
       orderId: string;
       item: PosOrderItemInput;
     }) => {
-      const res = await apiInstance.put<ApiResponse<PosOrder>>(
+      const res = await apiInstance.post<ApiResponse<PosOrder>>(
         `/pos/orders/${orderId}/item`,
         item
       );

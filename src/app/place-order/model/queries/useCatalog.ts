@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiInstance, unwrap } from "../../../../libs/instance";
-import type { PosServiceGroup, PosServiceItem } from "../types";
+import type { PosServiceGroup, PosServiceItem } from "../../../../model/pos/types";
 
 export interface CatalogSubcategory {
   id: number;

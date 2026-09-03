@@ -14,6 +14,7 @@ import {
   useCreateOrder,
   useRemoveOrderItem,
 } from "../model/mutations/useOrderDraft";
+import { useFinalizeInvoice } from "../model/mutations/useFinalizeInvoice";
 import { usePayOrder } from "../model/mutations/usePayOrder";
 import { useCatalog } from "../model/queries/useCatalog";
 import { useServiceItemModifiers } from "../model/queries/useLookups";
@@ -22,7 +23,7 @@ import type {
   PosCustomerSummary,
   PosPaymentMethod,
   PosServiceItem,
-} from "../model/types";
+} from "../../../model/pos/types";
 
 /** Survives a page reload so an in-progress draft isn't orphaned server side. */
 const DRAFT_STORAGE_KEY = "pos:draft-order-id";
@@ -291,6 +292,7 @@ export const usePlaceOrderLogic = () => {
   /* --------------------------------------------------------------- payment */
 
   const [paymentOpen, setPaymentOpen] = useState(false);
+  const finalizeInvoice = useFinalizeInvoice();
   const payOrder = usePayOrder();
 
   const openPayment = () => {
@@ -298,18 +300,22 @@ export const usePlaceOrderLogic = () => {
     setPaymentOpen(true);
   };
 
-  /**
-   * Full payment only. `amount` is the balance left after the voucher the
-   * backend applies for us; when the voucher settles everything, `method` is
-   * null and `payment_methods` goes up empty, which the API allows.
-   */
-  const handlePayment = async (method: PosPaymentMethod | null, amount: number) => {
-    if (!orderId) return;
+  const handlePayment = async (method: PosPaymentMethod | null) => {
+    if (!orderId || !order?.invoice) return;
     try {
+      const invoice =
+        order.invoice.status === "DRAFT"
+          ? await finalizeInvoice.mutateAsync({
+              orderId,
+              invoiceId: order.invoice.id,
+            })
+          : order.invoice;
+
+      const amount = invoice.amount_to_charge;
       const response = await payOrder.mutateAsync({
         orderId,
         body: {
-          payment_type: "FULL",
+          invoice_id: invoice.id,
           payment_methods:
             method && amount > 0
               ? [{ payment_method_id: method.id, amount }]
@@ -381,6 +387,6 @@ export const usePlaceOrderLogic = () => {
     openPayment,
     closePayment: () => setPaymentOpen(false),
     handlePayment,
-    isPaying: payOrder.isPending,
+    isPaying: finalizeInvoice.isPending || payOrder.isPending,
   };
 };

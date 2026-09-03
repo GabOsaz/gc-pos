@@ -6,13 +6,13 @@ import {
   channelPickerLabel,
   usePaymentMethods,
 } from "../model/queries/usePaymentMethods";
-import type { PosOrder, PosPaymentMethod } from "../model/types";
+import type { PosOrder, PosPaymentMethod } from "../../../model/pos/types";
 
 interface MakePaymentModalProps {
   isOpen: boolean;
   order: PosOrder | undefined;
   onCancel: () => void;
-  onPay: (method: PosPaymentMethod | null, amount: number) => void;
+  onPay: (method: PosPaymentMethod | null) => void;
   isPaying?: boolean;
 }
 
@@ -64,21 +64,12 @@ function MakePaymentModal({
       ? channelMethods[0]
       : channelMethods.find((m) => m.id === methodId) ?? null;
 
-  /**
-   * The backend applies any voucher balance before the selected methods. It does
-   * not tell us how much it will apply, so this mirrors its documented rule:
-   * voucher first, capped at the outstanding balance.
-   */
-  const voucherApplied = Math.min(
-    order?.customer.voucher_balance ?? 0,
-    order?.balance_due ?? 0
-  );
-  const amountDue = Math.max((order?.balance_due ?? 0) - voucherApplied, 0);
+  const invoice = order?.invoice ?? null;
+  const voucherApplied = invoice?.voucher_amount ?? 0;
+  const amountDue = invoice?.amount_to_charge ?? 0;
   const voucherCoversAll = amountDue === 0 && voucherApplied > 0;
 
-  const discounts = (order?.order_adjustments ?? []).filter(
-    (adjustment) => adjustment.direction === "DEBIT"
-  );
+  const discounts = invoice?.discounts ?? [];
 
   const reset = () => {
     setChannel("");
@@ -91,10 +82,10 @@ function MakePaymentModal({
   };
 
   const handlePay = () => {
-    onPay(voucherCoversAll ? null : selectedMethod, amountDue);
+    onPay(voucherCoversAll ? null : selectedMethod);
   };
 
-  const canPay = voucherCoversAll || !!selectedMethod;
+  const canPay = !!invoice && (voucherCoversAll || !!selectedMethod);
 
   return (
     <CustomModal
@@ -219,15 +210,11 @@ function MakePaymentModal({
               />
             )}
             <SummaryRow label="Service Fee" value={formatNaira(order?.fees_total)} />
-            {discounts.map((adjustment) => (
+            {discounts.map((discount) => (
               <SummaryRow
-                key={adjustment.id}
-                label={adjustment.adjustment_type
-                  .toLowerCase()
-                  .split("_")
-                  .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-                  .join(" ")}
-                value={`-${formatNaira(adjustment.amount)}`}
+                key={discount.id}
+                label={discount.description}
+                value={`-${formatNaira(discount.amount)}`}
                 tone="negative"
               />
             ))}

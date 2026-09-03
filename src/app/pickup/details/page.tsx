@@ -7,12 +7,9 @@ import SearchInput from "../../../components/SearchInput";
 import Table from "../../../components/Table";
 import type { ColumnDef } from "../../../components/Table";
 import TablePagination from "../../../components/TablePagination";
-import type { OrderItemRow } from "../../../utils/mockOrders";
+import { formatNaira } from "../../../utils/money";
 import { usePickupDetailsLogic } from "./controller/usePickupDetailsLogic";
-
-function fmt(n: number) {
-  return `₦${n.toLocaleString()}`;
-}
+import type { PickupItemRow } from "./model/pickupDetailMapping";
 
 const SummaryField = ({
   label,
@@ -31,6 +28,8 @@ const PickupDetailsPage = () => {
   const {
     order,
     items,
+    isLoading,
+    isError,
     search,
     typeFilter,
     filterOpen,
@@ -48,7 +47,7 @@ const PickupDetailsPage = () => {
     typeOptions,
   } = usePickupDetailsLogic();
 
-  const columns: ColumnDef<OrderItemRow>[] = [
+  const columns: ColumnDef<PickupItemRow>[] = [
     {
       key: "item",
       header: "Item",
@@ -67,7 +66,7 @@ const PickupDetailsPage = () => {
     {
       key: "serviceType",
       header: "Service Type",
-      render: (row) => <span className="text-brand-black">{fmt(row.serviceType)}</span>,
+      render: (row) => <span className="text-brand-black">{row.serviceType}</span>,
     },
     {
       key: "type",
@@ -84,7 +83,9 @@ const PickupDetailsPage = () => {
     {
       key: "unitPrice",
       header: "Unit Price",
-      render: (row) => <span className="text-brand-black">{fmt(row.unitPrice)}</span>,
+      render: (row) => (
+        <span className="text-brand-black">{formatNaira(row.unitPrice)}</span>
+      ),
     },
     {
       key: "quantity",
@@ -94,9 +95,24 @@ const PickupDetailsPage = () => {
     {
       key: "totalAmount",
       header: "Total Amount",
-      render: (row) => <span className="text-brand-black">{fmt(row.totalAmount)}</span>,
+      render: (row) => (
+        <span className="text-brand-black">{formatNaira(row.totalAmount)}</span>
+      ),
     },
   ];
+
+  if (isLoading || !order) {
+    return (
+      <AppShell>
+        <div className="px-24 py-8">
+          <BackBtn hasBackBtn label="Go Back" backBtnFn={goBack} />
+          <div className="bg-brand-lighter-gray border border-brand-neutral rounded-2xl px-8 py-7 mt-6 text-sm text-brand-logan-grey">
+            {isLoading ? "Loading order…" : isError ? "Could not load this order" : "Order not found"}
+          </div>
+        </div>
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell>
@@ -129,7 +145,7 @@ const PickupDetailsPage = () => {
               <SummaryField label="Delivery Date">{order.deliveryDate}</SummaryField>
               <SummaryField label="Date Created">{order.dateCreated}</SummaryField>
               <SummaryField label="No. of Items">
-                {order.itemCount} Items
+                {order.itemCount} Items · {order.pieceCount} Pieces
               </SummaryField>
             </div>
           </div>
@@ -137,7 +153,9 @@ const PickupDetailsPage = () => {
           <div className="border-t border-brand-neutral">
             <div className="grid grid-cols-5">
               <SummaryField label="Delivery Type">{order.deliveryType}</SummaryField>
-              <SummaryField label="Amount">{fmt(order.totalAmount)}</SummaryField>
+              <SummaryField label="Amount">
+                {formatNaira(order.totalAmount)}
+              </SummaryField>
               <SummaryField label="CRO Name">{order.croName}</SummaryField>
               <SummaryField label="Store Location">
                 {order.storeLocation}

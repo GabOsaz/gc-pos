@@ -94,16 +94,21 @@ export interface PosPaymentMethod {
   sort_order: number;
 }
 
+export interface PayOrderTender {
+  payment_method_id: number;
+  amount: number;
+  channel_last4_digit?: string | null;
+}
+
 export interface PayOrderBody {
-  payment_type: "FULL" | "PART";
-  /** Required when `payment_type` is PART, disallowed when FULL. */
-  order_approval_id?: string | null;
-  /** Max 2 entries, no duplicate `payment_method_id`. */
-  payment_methods: Array<{
-    payment_method_id: number;
-    amount: number;
-    channel_last4_digit?: string | null;
-  }>;
+  invoice_id: string;
+  payment_methods: PayOrderTender[];
+}
+
+export interface PayOrderBalanceBody {
+  payment_method_id: number;
+  amount: number;
+  channel_last4_digit?: string | null;
 }
 
 export interface PosTaxConfig {
@@ -188,17 +193,53 @@ export interface CreatePosOrderBody {
 export type OrderStatus = "PENDING" | "PROCESSING" | "COMPLETED" | "ABANDONED";
 export type PaymentStatus = "UNPAID" | "PARTIALLY_PAID" | "PAID";
 
-export interface PosOrderAdjustment {
+export type InvoiceStatus = "DRAFT" | "OPEN" | "CLOSED" | "PAID";
+
+export interface PosInvoiceLineItem {
   id: string;
-  order_id: string;
-  customer_id: number;
-  /** Backend enum is untyped in the guide, e.g. `LOYALTY_REDEMPTION`. */
-  adjustment_type: string;
-  direction: "CREDIT" | "DEBIT";
+  invoice_id: string;
+  order_item_id: string | null;
+  parent_line_item_id: string | null;
+  description: string;
+  product_type:
+    | "SERVICE_ITEM"
+    | "SERVICE_ITEM_MODIFIER"
+    | "SERVICE_ITEM_PREFERENCE";
+  quantity: number;
+  unit_price: number;
+}
+
+export interface PosInvoiceDiscount {
+  id: string;
+  invoice_id: string;
+  description: string;
   amount: number;
-  source: string;
-  source_reference_id: string | null;
-  source_snapshot: Record<string, unknown>;
+  discount_type: "LOYALTY_DISCOUNT";
+}
+
+export interface PosInvoice {
+  id: string;
+  customer_id: number;
+  order_id: string;
+  store_id: number | null;
+  pos_attendant_id: number | null;
+  order_approval_id: string | null;
+  parent_invoice_id: string | null;
+  billing_reason: "NEW_ORDER";
+  status: InvoiceStatus;
+  subtotal: number;
+  discount_total: number;
+  taxable_amount: number;
+  tax_total: number;
+  total: number;
+  voucher_amount: number;
+  amount_to_charge: number;
+  initial_amount_due: number;
+  initial_tax_due: number;
+  amount_due: number;
+  amount_paid: number;
+  line_items: PosInvoiceLineItem[];
+  discounts: PosInvoiceDiscount[];
 }
 
 export interface PosOrderItemServiceSnapshot {
@@ -270,6 +311,7 @@ export interface PosOrderItem {
   modifier_amount: number;
   preference_amount: number;
   line_subtotal_amount: number;
+  due_at: string | null;
   customer_note: string | null;
   pos_note: string | null;
   item_attributes: PosOrderItemAttributes;
@@ -314,6 +356,6 @@ export interface PosOrder {
   };
   store: { id: number; name: string; address: string | null } | null;
   pos_attendant: { id: number; name: string } | null;
-  order_adjustments: PosOrderAdjustment[];
+  invoice: PosInvoice | null;
   order_items: PosOrderItem[];
 }
