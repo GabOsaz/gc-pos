@@ -179,7 +179,11 @@ function AddOrderModal({
 
             {/* Accessories */}
             <div className="flex flex-col sm:flex-row gap-5 sm:gap-12 w-full">
-              <div className="w-full sm:w-1/2 sm:border-r sm:border-gray-200">
+              <div
+                className={`w-full sm:w-1/2 ${
+                  form.hasAccessories ? "sm:border-r sm:border-gray-200" : ""
+                }`}
+              >
                 <label className={labelClass}>Accessories</label>
                 <div className="flex gap-4">
                   {([true, false] as const).map((value) => (

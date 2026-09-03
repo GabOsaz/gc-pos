@@ -2,6 +2,7 @@ import AppShell from "../../components/AppShell";
 import CustomInput from "../../components/CustomInput";
 import CustomButton from "../../components/CustomButton";
 import EmptyState from "../../components/EmptyState";
+import TablePagination from "../../components/TablePagination";
 import { formatNaira } from "../../utils/money";
 import AddOrderModal from "./view/AddOrderModal";
 import SelectCustomerModal from "./view/SelectCustomerModal";
@@ -18,6 +19,10 @@ const PlaceOrderPage = () => {
     isLoadingServices,
     setActiveCategory,
     setSearch,
+    catalogPage,
+    catalogTotalPages,
+    goToPreviousCatalogPage,
+    goToNextCatalogPage,
 
     selectedCustomer,
     isCustomerLocked,
@@ -130,6 +135,15 @@ const PlaceOrderPage = () => {
             <p className="text-sm text-gray-400 mt-6">
               No service items match this search or category.
             </p>
+          )}
+
+          {!isLoadingServices && services.length > 0 && (
+            <TablePagination
+              page={catalogPage}
+              totalPages={catalogTotalPages}
+              onPrevious={goToPreviousCatalogPage}
+              onNext={goToNextCatalogPage}
+            />
           )}
         </div>
 

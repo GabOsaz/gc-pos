@@ -29,6 +29,7 @@ import type {
 const DRAFT_STORAGE_KEY = "pos:draft-order-id";
 
 const ALL_CATEGORIES = "All";
+const CATALOG_PAGE_SIZE = 12;
 
 /** The subset of customer detail the summary panel renders, from either source. */
 export interface SelectedCustomer {
@@ -59,13 +60,14 @@ export const usePlaceOrderLogic = () => {
   const { data: modifiers = [] } = useServiceItemModifiers();
 
   const [activeCategory, setActiveCategory] = useState<string>(ALL_CATEGORIES);
+  const [catalogPage, setCatalogPage] = useState(1);
 
   const categories = useMemo(
     () => [ALL_CATEGORIES, ...subcategories.map((sub) => sub.name)],
     [subcategories]
   );
 
-  const services = useMemo(() => {
+  const filteredServices = useMemo(() => {
     const term = search.trim().toLowerCase();
     const sub = subcategories.find((s) => s.name === activeCategory);
 
@@ -76,6 +78,32 @@ export const usePlaceOrderLogic = () => {
       return inCategory && matchesSearch;
     });
   }, [items, subcategories, activeCategory, search]);
+
+  const catalogTotalPages = Math.max(
+    1,
+    Math.ceil(filteredServices.length / CATALOG_PAGE_SIZE)
+  );
+  // Filtering can shrink the result set below the stored page; clamp at render time.
+  const currentCatalogPage = Math.min(catalogPage, catalogTotalPages);
+
+  const services = useMemo(
+    () =>
+      filteredServices.slice(
+        (currentCatalogPage - 1) * CATALOG_PAGE_SIZE,
+        currentCatalogPage * CATALOG_PAGE_SIZE
+      ),
+    [filteredServices, currentCatalogPage]
+  );
+
+  const setActiveCategoryAndResetPage = useCallback((category: string) => {
+    setActiveCategory(category);
+    setCatalogPage(1);
+  }, []);
+
+  const setSearchAndResetPage = useCallback((value: string) => {
+    setSearch(value);
+    setCatalogPage(1);
+  }, []);
 
   /* ----------------------------------------------------------------- draft */
 
@@ -349,8 +377,12 @@ export const usePlaceOrderLogic = () => {
     services,
     categories,
     isLoadingServices,
-    setActiveCategory,
-    setSearch,
+    setActiveCategory: setActiveCategoryAndResetPage,
+    setSearch: setSearchAndResetPage,
+    catalogPage: currentCatalogPage,
+    catalogTotalPages,
+    goToPreviousCatalogPage: () => setCatalogPage((p) => Math.max(1, p - 1)),
+    goToNextCatalogPage: () => setCatalogPage((p) => Math.min(catalogTotalPages, p + 1)),
 
     // Customer
     selectedCustomer,

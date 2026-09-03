@@ -11,7 +11,7 @@ const TablePagination = ({
   onPrevious,
   onNext,
 }: TablePaginationProps) => (
-  <div className="flex items-center justify-between px-6 py-4">
+  <div className="flex items-center justify-between px-1 py-4">
     <button
       type="button"
       onClick={onPrevious}
