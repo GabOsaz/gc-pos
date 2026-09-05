@@ -9,7 +9,7 @@ export function usePayOrder() {
   return useMutation({
     mutationFn: async ({ body }: { orderId: string; body: PayOrderBody }) => {
       const res = await apiInstance.post<ApiResponse<unknown>>(
-        "/payments/pos/orders",
+        "/payments/pos/order",
         body
       );
       return res.data;
